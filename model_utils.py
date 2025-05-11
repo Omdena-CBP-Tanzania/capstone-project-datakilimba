@@ -1,16 +1,76 @@
-# model_utils.py
 """
 Module for preparing features and building model pipelines.
 """
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, mean_absolute_error
-import pandas as pd
+import os
 import joblib
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score
+)
+
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.svm import SVR
+
 from constants import LABEL_MAP
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix
+
+def compare_multiple_regressors(df, region, target, models_dict):
+    """
+    Train and compare multiple regressors on a selected region and target.
+
+    Args:
+        df (DataFrame): Full dataset
+        region (str): Region to filter
+        target (str): Target variable
+        models_dict (dict): {model_name: sklearn_model}
+
+    Returns:
+        DataFrame with model name and performance metrics (RMSE, MAE, R2)
+    """
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+    import os
+
+    region_df = df[df["Region"] == region]
+    X, y = prepare_features(region_df, target=target, show_correlation=False)
+    X_train, X_test, y_train, y_test = split_data(X, y)
+
+    results = []
+
+    for name, model in models_dict.items():
+        pipeline = make_model_pipeline(model)
+        trained = train_model(pipeline, X_train, y_train)
+        y_pred = trained.predict(X_test)
+
+        rmse = mean_squared_error(y_test, y_pred, squared=False)
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+
+        # Save model
+        os.makedirs("models", exist_ok=True)
+        filename = f"models/{region}_{target}_{name.replace(' ', '')}.pkl"
+        save_model(trained, filename)
+
+        results.append({
+            "Model": name,
+            "RMSE": rmse,
+            "MAE": mae,
+            "R2": r2
+        })
+
+    return pd.DataFrame(results).sort_values(by="RMSE")
+
 
 def prepare_features(df, target, drop_cols=["YearMonth", "Region", "Year"], show_correlation=True):
     X = df.drop(columns=drop_cols + [target], errors="ignore")
@@ -68,9 +128,10 @@ def evaluate_model(model_pipeline, X_test, y_test, task='classification'):
         }
     else:
         return {
-            "rmse": mean_squared_error(y_test, y_pred, squared=False),
-            "mae": mean_absolute_error(y_test, y_pred)
-        }
+    "rmse": mean_squared_error(y_test, y_pred, squared=False),
+    "mae": mean_absolute_error(y_test, y_pred),
+    "r2": r2_score(y_test, y_pred)
+}
 
 def save_model(model_pipeline, filepath):
     joblib.dump(model_pipeline, filepath)
@@ -78,44 +139,90 @@ def save_model(model_pipeline, filepath):
 def load_model(filepath):
     return joblib.load(filepath)
 
-def tune_model_with_gridsearch(model, param_grid, X_train, y_train, scoring='neg_root_mean_squared_error', cv=5):
-    pipeline = make_model_pipeline(model)
-    grid = GridSearchCV(pipeline, param_grid, cv=cv, scoring=scoring)
-    grid.fit(X_train, y_train)
-    return grid.best_estimator_, grid.best_params_, -grid.best_score_
+def tune_model(model, param_grid, X_train, y_train, scoring='neg_root_mean_squared_error', method='random', n_iter=20, cv=5):
+    """
+    Generic hyperparameter tuning with either GridSearchCV or RandomizedSearchCV.
 
-def run_regression_for_region(df, region, target, model, use_gridsearch=False, param_grid=None):
+    Args:
+        model: sklearn estimator
+        param_grid: dict
+        X_train: pd.DataFrame
+        y_train: pd.Series
+        scoring: str
+        method: 'random' or 'grid'
+        n_iter: only used for randomized search
+        cv: int
+
+    Returns:
+        best_model, best_params, best_score
+    """
+    pipeline = make_model_pipeline(model)
+    if method == "grid":
+        search = GridSearchCV(pipeline, param_grid, scoring=scoring, cv=cv)
+    else:
+        search = RandomizedSearchCV(pipeline, param_distributions=param_grid, scoring=scoring, cv=cv, n_iter=n_iter, random_state=42)
+
+    search.fit(X_train, y_train)
+    return search.best_estimator_, search.best_params_, -search.best_score_
+
+def run_regression_for_region(
+    df, region, target, model,
+    use_search=False, param_grid=None,
+    search_method='random', n_iter=10
+):
+    """
+    Train a regression model for a specific region and target variable,
+    optionally using hyperparameter search (grid or randomized).
+    """
     df_region = df[df["Region"] == region]
     X, y = prepare_features(df_region, target=target)
     X_train, X_test, y_train, y_test = split_data(X, y)
 
-    if use_gridsearch and param_grid:
-        best_model, best_params, best_score = tune_model_with_gridsearch(
-            model, param_grid, X_train, y_train
+    if use_search and param_grid:
+        best_model, best_params, best_score = tune_model(
+            model,
+            param_grid,
+            X_train,
+            y_train,
+            method=search_method,
+            n_iter=n_iter
         )
         metrics = evaluate_model(best_model, X_test, y_test, task="regression")
         metrics.update({"best_params": best_params, "cv_rmse": best_score})
         model_step = best_model.named_steps.get("model")
-        if hasattr(model_step, "feature_importances_"):
-            importances = model_step.feature_importances_
-            top_features = sorted(zip(X_train.columns, importances), key=lambda x: -x[1])[:5]
-            print("\n🔍 Top 5 Important Features:")
-            for name, score in top_features:
-                label = LABEL_MAP.get(name, name)
-                print(f"  {label}: {score:.3f}")
+    else:
+        pipeline = make_model_pipeline(model)
+        best_model = train_model(pipeline, X_train, y_train)
+        metrics = evaluate_model(best_model, X_test, y_test, task="regression")
+        model_step = best_model.named_steps.get("model")
+
+    # Display feature importances
+    if hasattr(model_step, "feature_importances_"):
+        importances = model_step.feature_importances_
+        top_features = sorted(zip(X_train.columns, importances), key=lambda x: -x[1])[:5]
+        print("\n🧠 Top 5 Important Features (User-Friendly Labels):")
+        for name, score in top_features:
+            label = LABEL_MAP.get(name, name)
+            print(f"  {label}: {score:.3f}")
+
+    return best_model, metrics
+
+def run_classification_for_region(df, region, target, model, use_search=False, param_grid=None, search_method='random'):
+    df_region = df[df["Region"] == region]
+    X, y = prepare_features(df_region, target=target)
+    X_train, X_test, y_train, y_test = split_data(X, y)
+
+    if use_search and param_grid:
+        best_model, best_params, best_score = tune_model(
+            model, param_grid, X_train, y_train, scoring='accuracy', method=search_method
+        )
+        metrics = evaluate_model(best_model, X_test, y_test, task="classification")
+        metrics.update({"best_params": best_params, "cv_accuracy": best_score})
         return best_model, metrics
     else:
         pipeline = make_model_pipeline(model)
         trained = train_model(pipeline, X_train, y_train)
-        metrics = evaluate_model(trained, X_test, y_test, task="regression")
-        model_step = trained.named_steps.get("model")
-        if hasattr(model_step, "feature_importances_"):
-            importances = model_step.feature_importances_
-            top_features = sorted(zip(X_train.columns, importances), key=lambda x: -x[1])[:5]
-            print("\n🔍 Top 5 Important Features:")
-            for name, score in top_features:
-                label = LABEL_MAP.get(name, name)
-                print(f"  {label}: {score:.3f}")
+        metrics = evaluate_model(trained, X_test, y_test, task="classification")
         return trained, metrics
 
 def compare_models(df, region, target, models_dict):
@@ -128,21 +235,3 @@ def compare_models(df, region, target, models_dict):
         metrics = evaluate_model(trained, X_test, y_test, task="regression")
         results[name] = metrics
     return results
-
-def run_classification_for_region(df, region, target, model, use_gridsearch=False, param_grid=None):
-    df_region = df[df["Region"] == region]
-    X, y = prepare_features(df_region, target=target)
-    X_train, X_test, y_train, y_test = split_data(X, y)
-
-    if use_gridsearch and param_grid:
-        best_model, best_params, best_score = tune_model_with_gridsearch(
-            model, param_grid, X_train, y_train, scoring="accuracy"
-        )
-        metrics = evaluate_model(best_model, X_test, y_test, task="classification")
-        metrics.update({"best_params": best_params, "cv_accuracy": best_score})
-        return best_model, metrics
-    else:
-        pipeline = make_model_pipeline(model)
-        trained = train_model(pipeline, X_train, y_train)
-        metrics = evaluate_model(trained, X_test, y_test, task="classification")
-        return trained, metrics

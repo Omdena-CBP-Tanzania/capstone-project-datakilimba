@@ -1,55 +1,54 @@
 import streamlit as st
-from data_utils import prepare_features
-from visualizations import plot_actual_vs_predicted
-from model_utils import split_data, load_model, evaluate_model, save_model, train_model
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.svm import SVR
 
+from data_utils import load_data, preprocess_data
+from model_utils import compare_multiple_regressors
+from constants import LABEL_MAP
 
+# Page configuration
+st.set_page_config(page_title="Model Training", layout="wide")
+st.title("🤖 Climate Model Training")
 
-def show(df):
-    """Display the model training page"""
-    st.header("Model Training")
+# Load and preprocess data
+raw_df = load_data()
+df = preprocess_data(raw_df.copy())
 
-    # Prepare feature  and target
-    X, y = prepare_features(df)
+# Sidebar inputs
+st.sidebar.header("🛠️ Model Configuration")
+region = st.sidebar.selectbox("Select Region", df["Region"].unique())
+target = st.sidebar.selectbox("Select Target Variable", ["T2M", "PRECTOTCORR", "WS2M", "RH2M"])
+run_button = st.sidebar.button("Train Models")
 
-    # Split data into training and test sets
-    test_size = st.slider("Test data size (%)", 10, 40, 20) / 100
-    X_train, X_test, y_train, y_test = split_data(X, y, test_size)
+# Show selected configuration
+st.markdown(f"### Training Models to Predict **{LABEL_MAP.get(target, target)}** in **{region}**")
 
-    st.write(f"Training Data: {len(X_train)} samples")
-    st.write(f"Testing Data: {len(X_test)} samples")
+if run_button:
+    st.info("⏳ Training in progress... Please wait.")
+    
+    models = {
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
+        "Linear Regression": LinearRegression(),
+        "Ridge Regression": Ridge(alpha=1.0),
+        "Support Vector": SVR(kernel='rbf')
+    }
 
-    model_type = st.selectbox("Select the model Types", ['"Linear Regression', 'Random Forest'])
+    results_df = compare_multiple_regressors(df, region, target, models)
+    st.success("✅ Training complete. Results below:")
 
-    # Train the model - button to train the model
-    if st.button("Train Model"):
-        with st.spinner("Training in progress..."):
-            # Train the model
-            model = train_model(X_train, y_train, model_type)
+    st.dataframe(results_df.style.format({"RMSE": "{:.2f}", "MAE": "{:.2f}", "R2": "{:.2f}"}))
 
-            # Evaluate teh model
-            metrics = evaluate_model(model, X_train, y_train, X_test, y_test)
+    # Highlight best model
+    best_model_row = results_df.loc[results_df['RMSE'].idxmin()]
+    st.markdown("### 🏆 Best Performing Model")
+    st.write(f"**Model**: {best_model_row['Model']}")
+    st.write(f"**RMSE**: {best_model_row['RMSE']:.2f}, **MAE**: {best_model_row['MAE']:.2f}, **R²**: {best_model_row['R2']:.2f}")
 
-            # Display  the metrics
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Training Metrics")
-                st.write(f"RMSE : {metrics['train_rmse']:.2f} C")
-                st.write(f"R : {metrics['train_r2']:.4f}")
-
-            with col2:
-                st.subheader("Testing Metrics")
-                st.write(f"RMSE : {metrics['test_rmse']:.2f} C")
-                st.write(f"R : {metrics['test_r2']:.4f}")
-            
-            # Plot the actual vs the predicted 
-            st.subheader("Actual vs Predicted (test data)")
-            fig = plot_actual_vs_predicted(metrics['y_test'], metrics['y_pred_test'])
-            st.pyplot(fig)
-
-            # Save the model
-            save_model(model)
-
-            st.success("Model trained and saved successfully!")
-            st.session_state['model'] = model
-            st.session_state['model_type'] = model_type
+    # Path of saved model
+    model_path = f"models/{region}_{target}_{best_model_row['Model'].replace(' ', '')}.pkl"
+    st.info(f"💾 Best model saved to: `{model_path}`")
+else:
+    st.warning("⚠️ Click the 'Train Models' button to start training.")
