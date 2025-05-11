@@ -28,39 +28,26 @@ from sklearn.metrics import confusion_matrix
 
 def compare_multiple_regressors(df, region, target, models_dict):
     """
-    Train and compare multiple regressors on a selected region and target.
-
-    Args:
-        df (DataFrame): Full dataset
-        region (str): Region to filter
-        target (str): Target variable
-        models_dict (dict): {model_name: sklearn_model}
-
-    Returns:
-        DataFrame with model name and performance metrics (RMSE, MAE, R2)
+    Train and compare multiple regressors for a given region and target variable.
+    Only the best model is saved to disk as {region}_{target}_best.pkl
     """
-    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-    import os
-
-    region_df = df[df["Region"] == region]
-    X, y = prepare_features(region_df, target=target, show_correlation=False)
+    df_region = df[df["Region"] == region]
+    X, y = prepare_features(df_region, target=target)
     X_train, X_test, y_train, y_test = split_data(X, y)
 
     results = []
+    best_model = None
+    best_score = float("inf")
+    best_model_name = None
 
     for name, model in models_dict.items():
-        pipeline = make_model_pipeline(model)
-        trained = train_model(pipeline, X_train, y_train)
+        pipe = make_model_pipeline(model)
+        trained = train_model(pipe, X_train, y_train)
         y_pred = trained.predict(X_test)
 
         rmse = mean_squared_error(y_test, y_pred, squared=False)
         mae = mean_absolute_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
-
-        # Save model
-        os.makedirs("models", exist_ok=True)
-        filename = f"models/{region}_{target}_{name.replace(' ', '')}.pkl"
-        save_model(trained, filename)
 
         results.append({
             "Model": name,
@@ -68,6 +55,16 @@ def compare_multiple_regressors(df, region, target, models_dict):
             "MAE": mae,
             "R2": r2
         })
+
+        if rmse < best_score:
+            best_score = rmse
+            best_model = trained
+            best_model_name = name
+
+    # Save only the best model
+    save_path = f"models/{region}_{target}_best.pkl"
+    save_model(best_model, save_path)
+    print(f"✅ Saved best model: {best_model_name} -> {save_path}")
 
     return pd.DataFrame(results).sort_values(by="RMSE")
 

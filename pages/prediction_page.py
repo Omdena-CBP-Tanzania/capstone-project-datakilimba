@@ -1,58 +1,87 @@
 import streamlit as st
-import numpy as np
+import pandas as pd
+import os
+from datetime import datetime
+from data_utils import load_data, preprocess_data
 from model_utils import load_model
+from prediction import (
+    make_prediction,
+    format_predictions,
+    get_historical_context,
+    get_historical_average,
+    detect_anomaly
+)
 from visualizations import plot_prediction_context
-from prediction import make_prediction, get_historical_average, get_historical_context
-def show(df):
-    """Display the prediction page"""
-    st.header("Temperature Predictions")
+from constants import LABEL_MAP
 
-    # Check if the model exists
-    if 'model' not in st.session_state:
-        model = load_model()
-        if model is None:
-            st.warning("No trained Model found. Please go to the model training page first")
-            st.stop()
-        st.session_state['model'] = model
-        st.session_state['model_type'] = "Pre-trained model"
+st.set_page_config(page_title="📈 Climate Prediction", layout="centered")
+st.title("📈 Predict Future Climate")
 
-    #Show the model that is being used
-    st.info(f"Using {st.session_state['model_type']} for predictions")
+# Load and preprocess data
+raw_df = load_data()
+df = preprocess_data(raw_df.copy())
 
-    # Prediction input
-    st.subheader("Select the date for predictiion")
-    pred_year = st.slider("Year", 2010, 2030, 2025)
-    pred_month = st.slider("Month", 1, 12, 6)
+# Sidebar selections
+regions = df["Region"].unique().tolist()
+variables = ["T2M", "PRECTOTCORR", "WS2M", "RH2M"]
+region = st.selectbox("Select Region", regions)
+target = st.selectbox("Select Climate Variable to Predict", variables)
+label = LABEL_MAP.get(target, target)
 
-    # Make prediction
-    if st.button("Predict Temperature"):
-        # Get model
-        model = st.session_state['model']
+# Year and month inputs
+current_year = datetime.now().year
+col1, col2 = st.columns(2)
+with col1:
+    year = st.number_input("Prediction Year", min_value=2000, max_value=2050, value=current_year)
+with col2:
+    month = st.selectbox("Prediction Month", list(range(1, 13)))
 
-        # Make prediction
-        prediction = make_prediction(model, pred_year, pred_month)
+# Filter region-specific data
+df_region = df[df["Region"] == region].copy()
 
-        # Display the results
-        st.success(f"Predicted temperature for {pred_year}-{pred_month:02d} : {prediction:.2f} C")
+# Ensure required columns
+if "year" not in df_region.columns:
+    df_region["year"] = df_region["YearMonth"].dt.year
+if "month" not in df_region.columns:
+    df_region["month"] = df_region["YearMonth"].dt.month
 
-        # Give the historical comparison
-        hist_avg = get_historical_average(df, pred_month)
+# Forecast mode check
+forecast_mode = (year, month) not in list(zip(df_region["year"], df_region["month"]))
+if forecast_mode:
+    st.warning("🔮 Forecast mode: Predicting for a future date not in historical data.")
 
-        st.write(f"Historical average for month {pred_month}: {hist_avg:.2f}C")
-        
-        # Calculate the difference 
-        diff = prediction - hist_avg
-        if diff > 0:
-            st.write(f"Prediction is {diff:.2f}C **higher** than historical average")
-        else:
-            st.write(f"Prediction is {abs(diff):.2f}C **Lower** than historical average")
+# Prediction
+if st.button("🔮 Predict"):
+    model_dir = "models"
+    matched_model_file = None
+    model_type = None
 
-        # Visualize
-        st.subheader("Prediction in the Historical Context")
+    # Locate model file
+    for fname in os.listdir(model_dir):
+        if fname.startswith(f"{region}_{target}_") and fname.endswith(".pkl"):
+            matched_model_file = fname
+            model_type = fname.split("_")[-1].replace(".pkl", "")
+            break
 
-        # GEt the historical context
-        hist_temps = get_historical_context(df, pred_month)
+    if matched_model_file:
+        model_path = os.path.join(model_dir, matched_model_file)
+        model = load_model(model_path)
 
-        # plot prediction context
-        fig = plot_prediction_context(hist_temps, pred_year, pred_month, prediction)
+        prediction = make_prediction(
+            model, year, month, reference_df=df_region,
+            target=target, forecast_mode=forecast_mode
+        )
+
+        st.success(format_predictions([prediction], variable=target))
+        st.info(f"Model used: **{model_type}**")
+
+        # Anomaly detection
+        hist_avg = get_historical_average(df_region, month, variable=target)
+        st.warning(detect_anomaly(prediction, hist_avg))
+
+        # Historical context plot
+        hist_context = get_historical_context(df_region, month, variable=target)
+        fig = plot_prediction_context(hist_context, year, month, prediction, variable=target)
         st.pyplot(fig)
+    else:
+        st.error(f"No trained model found for {region} and {label}. Please train it first.")

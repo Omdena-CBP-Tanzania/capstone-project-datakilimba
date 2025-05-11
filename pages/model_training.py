@@ -1,54 +1,77 @@
 import streamlit as st
-import pandas as pd
+from data_utils import load_data, preprocess_data
+from model_utils import prepare_features, split_data, make_model_pipeline, train_model, evaluate_model, save_model
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.svm import SVR
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import pandas as pd
+import os
 
-from data_utils import load_data, preprocess_data
-from model_utils import compare_multiple_regressors
-from constants import LABEL_MAP
-
-# Page configuration
 st.set_page_config(page_title="Model Training", layout="wide")
-st.title("🤖 Climate Model Training")
+st.title("🧪 Model Training and Comparison")
 
-# Load and preprocess data
+# Load and preprocess
 raw_df = load_data()
 df = preprocess_data(raw_df.copy())
 
-# Sidebar inputs
-st.sidebar.header("🛠️ Model Configuration")
-region = st.sidebar.selectbox("Select Region", df["Region"].unique())
-target = st.sidebar.selectbox("Select Target Variable", ["T2M", "PRECTOTCORR", "WS2M", "RH2M"])
-run_button = st.sidebar.button("Train Models")
+# UI: Select Region and Variable
+region = st.selectbox("Select Region", df["Region"].unique())
+target = st.selectbox("Select Target Variable", ["T2M", "PRECTOTCORR", "WS2M", "RH2M"])
 
-# Show selected configuration
-st.markdown(f"### Training Models to Predict **{LABEL_MAP.get(target, target)}** in **{region}**")
+# Prepare features
+df_region = df[df["Region"] == region]
+X, y = prepare_features(df_region, target=target)
+X_train, X_test, y_train, y_test = split_data(X, y)
 
-if run_button:
-    st.info("⏳ Training in progress... Please wait.")
-    
-    models = {
-        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
-        "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
-        "Linear Regression": LinearRegression(),
-        "Ridge Regression": Ridge(alpha=1.0),
-        "Support Vector": SVR(kernel='rbf')
-    }
+# Define models
+models = {
+    "RandomForest": RandomForestRegressor(n_estimators=100, random_state=42),
+    "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
+    "LinearRegression": LinearRegression(),
+    "RidgeRegression": Ridge(),
+    "SupportVector": SVR()
+}
 
-    results_df = compare_multiple_regressors(df, region, target, models)
-    st.success("✅ Training complete. Results below:")
+results = []
+best_rmse = float("inf")
+best_model = None
+best_model_name = ""
+best_metrics = {}
 
-    st.dataframe(results_df.style.format({"RMSE": "{:.2f}", "MAE": "{:.2f}", "R2": "{:.2f}"}))
+st.subheader("🔍 Comparing Models...")
 
-    # Highlight best model
-    best_model_row = results_df.loc[results_df['RMSE'].idxmin()]
-    st.markdown("### 🏆 Best Performing Model")
-    st.write(f"**Model**: {best_model_row['Model']}")
-    st.write(f"**RMSE**: {best_model_row['RMSE']:.2f}, **MAE**: {best_model_row['MAE']:.2f}, **R²**: {best_model_row['R2']:.2f}")
+for name, model in models.items():
+    pipeline = make_model_pipeline(model)
+    trained = train_model(pipeline, X_train, y_train)
+    preds = trained.predict(X_test)
+    rmse = mean_squared_error(y_test, preds, squared=False)
+    mae = mean_absolute_error(y_test, preds)
+    r2 = r2_score(y_test, preds)
 
-    # Path of saved model
-    model_path = f"models/{region}_{target}_{best_model_row['Model'].replace(' ', '')}.pkl"
-    st.info(f"💾 Best model saved to: `{model_path}`")
-else:
-    st.warning("⚠️ Click the 'Train Models' button to start training.")
+    results.append({
+        "Model": name,
+        "RMSE": rmse,
+        "MAE": mae,
+        "R2": r2
+    })
+
+    if rmse < best_rmse:
+        best_rmse = rmse
+        best_model = trained
+        best_model_name = name
+        best_metrics = {"RMSE": rmse, "MAE": mae, "R2": r2}
+
+# Show results table
+results_df = pd.DataFrame(results).sort_values("RMSE")
+st.dataframe(results_df, use_container_width=True)
+
+# Save best model
+if best_model:
+    os.makedirs("models", exist_ok=True)
+    save_path = f"models/{region}_{target}_BEST.pkl"
+    save_model(best_model, save_path)
+    st.info(f"💾 Best model (**{best_model_name}**) saved to: `{save_path}`")
+
+    st.markdown("### 🧮 Best Model Metrics")
+    st.write(f"**RMSE**: {best_metrics['RMSE']:.2f}, **MAE**: {best_metrics['MAE']:.2f}, **R²**: {best_metrics['R2']:.2f}")
