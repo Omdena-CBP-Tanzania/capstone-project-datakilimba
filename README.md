@@ -1,86 +1,122 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/t9jXgJYS)
-﻿# Project: **Climate Change Analysis in Tanzania**
 
-## Objective:
-- Analyzing historical climate data to understand trends and predict future climate patterns in Tanzania.
+# 🌍 Climate Prediction Dashboard - Tanzania
 
-### Tools and Libraries:
-- Python (Pandas, NumPy, Matplotlib, Seaborn)
+A climate analytics and forecasting tool built as part of the **Omdena CBP Tanzania Capstone Project**. This application enables users to explore climate trends and generate monthly forecasts for key variables across Tanzanian regions using machine learning models.
 
-- Scikit-learn (for Machine Learning)
+## 📌 Project Objectives
 
-- Streamlit (for deployment)
+- Develop a user-friendly dashboard to explore historical climate trends in Tanzania.
+- Build and compare multiple regression models (e.g., Random Forest, Ridge, SVR) to predict monthly values of climate variables.
+- Enable real-time single-point prediction for any selected month and region.
+- Detect anomalies and visualize predicted values in historical context.
+- Apply learnings from the **Omdena ML/AI for Social Good** course on model lifecycle, collaboration, and storytelling.
 
-## Project Structure:
-### 1. Data Collection:
-- *Source*: Use publicly available climate datasets (e.g., NOAA, World Bank Climate Data) that include historical weather patterns in Tanzania.
+---
 
-- Download and integrate the data to a csv file that you can use further for the analysis.
+## 🧪 Climate Variables Modeled
 
-- Data Format: CSV or Excel files are commonly available formats.
+- **T2M** – Air Temperature (°C)
+- **PRECTOTCORR** – Precipitation (mm)
+- **WS2M** – Wind Speed at 2m (m/s)
+- **RH2M** – Relative Humidity (%)
 
-- Output: Downloaded dataset in a structured format ready for preprocessing.
+Each variable is modeled and predicted on a **monthly** basis for multiple Tanzanian regions.
 
-### 2. Data Preprocessing:
-Tasks:
+---
 
-- Handle missing values (if any).
+## 🔍 Methodology
 
-- Convert data types as necessary (e.g., datetime conversion).
+### 1. **Data Processing**
+- Raw data is loaded via `data_utils.py`, then cleaned and engineered with:
+  - Cyclical encoding for `month` (`sin`/`cos`)
+  - One-hot encoding for `Season`
+  - Derived columns: `Month_sin`, `Month_cos`, `Season`, `Year`
 
-- Feature engineering: Extract relevant features such as seasonal trends, average temperatures, precipitation levels.
+### 2. **Exploratory Data Analysis (EDA)**
+Implemented in `data_exploration.py`, using `visualizations.py`:
+- Time series and yearly trend plots
+- Boxplots for monthly distribution
+- Correlation matrix and feature distributions
+- Automated insights for correlated variables
+- Optional seasonal decomposition
 
-- Encoding categorical variables (if applicable).
+### 3. **Model Training & Comparison**
+Available in `model_training.py`:
+- Train five regression models:
+  - Random Forest Regressor
+  - Gradient Boosting Regressor
+  - Support Vector Regressor
+  - Ridge Regression
+  - Linear Regression
+- Evaluate using RMSE, MAE, R²
+- Save the best model for each variable-region combo (`*_best.pkl`)
 
-- Output: Cleaned dataset ready for exploratory data analysis (EDA) and modeling.
+### 4. **Prediction Module**
+In `prediction_page.py`:
+- User inputs year, month, region, and variable
+- Selects best model from saved files
+- Forecast or historical mode auto-detected
+- Detects anomalies using a 2-unit threshold
+- Visualizes prediction within historical context
 
-### 3. Exploratory Data Analysis (EDA):
-Tasks:
+---
 
-- Statistical summaries: Descriptive statistics (mean, median, variance).
+## 📊 Model Performance Summary
 
-- Data visualization: Plot time series of temperature trends, precipitation levels over the years.
+Model comparison was based on **RMSE** across different regions and climate variables.
 
-- Identify correlations: Heatmaps, scatter plots to understand relationships between variables.
+| Model               | Typical RMSE (T2M) | Notes                        |
+|--------------------|--------------------|------------------------------|
+| Random Forest       | ~0.85–1.2          | Best general performance     |
+| Ridge Regression    | ~1.1–1.5           | Good linear baseline         |
+| SVR                 | ~1.3–1.6           | Sensitive to feature scaling |
+| Gradient Boosting   | ~0.9–1.3           | Occasionally outperforms RF  |
+| Linear Regression   | ~1.4–1.8           | Simplest but least accurate  |
 
-- Seasonal decomposition: Identify seasonal patterns using decomposition techniques (e.g., using seasonal_decompose from statsmodels).
+---
 
-- Output: Visualizations (line plots, histograms, heatmaps) depicting historical climate trends and patterns.
+## 💡 Learnings from Omdena Course
 
-### 4. Machine Learning Model Development:
-##### Objective: Predict future climate conditions based on historical data.
+As a participant of the **Omdena Community Bootcamp**, I gained hands-on skills in:
 
-Tasks:
+- Structuring a real-world machine learning pipeline: data → modeling → app.
+- Comparing models in a reproducible way using `sklearn` and `joblib`.
+- Building Streamlit dashboards with modular Python code.
+- Communicating insights from EDA and model performance clearly.
+- Collaborating within a best-practices ML repository (Git/GitHub).
 
-- Split data into training and testing sets.
+---
 
-- Select appropriate ML model(s) (e.g., Linear Regression, Random Forest) for prediction.
+## 🚀 How to Run
 
-- Train the model on historical data.
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-- Evaluate model performance using metrics like RMSE (Root Mean Square Error), MAE (Mean Absolute Error).
+Make sure `models/` directory exists for saving models.
 
-- Output: Trained model capable of predicting future climate conditions in Tanzania.
+---
 
-### 5. Streamlit Deployment:
-#### Objective: Create an interactive web application to showcase climate predictions.
+## 📂 Project Structure
 
-Tasks:
+```
+capstone-project-datakilimba/
+│
+├── data_utils.py
+├── model_utils.py
+├── prediction.py
+├── visualizations.py
+├── pages/
+│   ├── data_exploration.py
+│   ├── model_training.py
+│   └── prediction_page.py
+├── models/                # Auto-created to store trained models
+└── constants.py
+```
 
-- Develop a Streamlit app with user-friendly interface.
+---
 
-- Incorporate visualizations (e.g., plots from EDA, predicted climate trends).
+## 🙌 Acknowledgments
 
-- Allow users to input parameters (if applicable) and see model predictions in real-time.
-
-- Output: Deployed Streamlit web application accessible for users to explore climate predictions.
-
-## Project Deliverables:
-- Final Report: Document summarizing the project objectives, methodology, findings from EDA, and model performance. This will be a blog outlining what you have learnt in the course - You can further post it in social media to higlight what you have done.
-
-- Code: Python scripts for data preprocessing, EDA, model development, and Streamlit app deployment.
-
-- Streamlit Web App: Live deployment link for interactive exploration of climate predictions.
-
-## Conclusion:
-This project will equip you with essential skills in data preprocessing, exploratory data analysis, machine learning modeling, and deploying a web application using Streamlit. It leverages freely available climate data to gain insights into climate change patterns specific to Tanzania. Adjustments can be made based on specific datasets you find during your exploration.
+Thanks to the **Omdena CBP Tanzania Chapter** and mentors for guidance. This project contributes toward climate-smart agriculture and environmental planning in Tanzania.
