@@ -69,8 +69,8 @@ st.dataframe(results_df, use_container_width=True)
 # Save best model
 if best_model:
     os.makedirs("models", exist_ok=True)
-    save_path = f"models/{region}_{target}_BEST.pkl"
-    save_model(best_model, save_path)
+    save_path = f"models/{region}_{target}_{best_model_name}.pkl"
+    save_model(best_model, save_path, model_type=best_model_name)
     st.info(f"💾 Best model (**{best_model_name}**) saved to: `{save_path}`")
 
     st.markdown("### 🧮 Best Model Metrics")

@@ -26,47 +26,54 @@ from constants import LABEL_MAP
 from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.metrics import confusion_matrix
 
-def compare_multiple_regressors(df, region, target, models_dict):
-    """
-    Train and compare multiple regressors for a given region and target variable.
-    Only the best model is saved to disk as {region}_{target}_best.pkl
-    """
+def compare_multiple_regressors(df, region, target, save_best=True, model_dir="models"):
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+    from sklearn.linear_model import LinearRegression, Ridge
+    from sklearn.svm import SVR
+
     df_region = df[df["Region"] == region]
     X, y = prepare_features(df_region, target=target)
     X_train, X_test, y_train, y_test = split_data(X, y)
 
+    models = {
+        "RandomForest": RandomForestRegressor(random_state=42),
+        "LinearRegression": LinearRegression(),
+        "RidgeRegression": Ridge(),
+        "SupportVector": SVR(),
+        "GradientBoosting": GradientBoostingRegressor(random_state=42)
+    }
+
     results = []
-    best_model = None
-    best_score = float("inf")
-    best_model_name = None
+    trained_models = {}
 
-    for name, model in models_dict.items():
-        pipe = make_model_pipeline(model)
-        trained = train_model(pipe, X_train, y_train)
-        y_pred = trained.predict(X_test)
-
-        rmse = mean_squared_error(y_test, y_pred, squared=False)
-        mae = mean_absolute_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
-
+    for name, model in models.items():
+        pipeline = make_model_pipeline(model)
+        trained = train_model(pipeline, X_train, y_train)
+        metrics = evaluate_model(trained, X_test, y_test, task="regression")
+        trained_models[name] = trained
         results.append({
             "Model": name,
-            "RMSE": rmse,
-            "MAE": mae,
-            "R2": r2
+            "RMSE": metrics["rmse"],
+            "MAE": metrics["mae"],
+            "R2": metrics.get("r2", None)
         })
 
-        if rmse < best_score:
-            best_score = rmse
-            best_model = trained
-            best_model_name = name
+    results_df = pd.DataFrame(results).sort_values("RMSE")
 
-    # Save only the best model
-    save_path = f"models/{region}_{target}_best.pkl"
-    save_model(best_model, save_path)
-    print(f"✅ Saved best model: {best_model_name} -> {save_path}")
+    if save_best:
+        best_model_name = results_df.iloc[0]["Model"]
+        best_model = trained_models[best_model_name]
 
-    return pd.DataFrame(results).sort_values(by="RMSE")
+        # ✅ Store model name internally before saving
+        if hasattr(best_model.named_steps.get("model", None), "__class__"):
+            setattr(best_model.named_steps["model"], "_model_name", best_model_name)
+
+        save_name = f"{region}_{target}_best.pkl"
+        save_path = os.path.join(model_dir, save_name)
+        save_model(best_model, save_path)
+        print(f"✅ Best model ({best_model_name}) saved to {save_path}")
+
+    return results_df
 
 
 def prepare_features(df, target, drop_cols=["YearMonth", "Region", "Year"], show_correlation=True):
@@ -130,11 +137,23 @@ def evaluate_model(model_pipeline, X_test, y_test, task='classification'):
     "r2": r2_score(y_test, y_pred)
 }
 
-def save_model(model_pipeline, filepath):
+def save_model(model_pipeline, filepath, model_type=None):
+    """
+    Saves the model pipeline to the specified filepath.
+    Optionally embeds the model type into the pipeline object for later retrieval.
+    """
+    if model_type:
+        setattr(model_pipeline, "model_type", model_type)  # Embed model type as metadata
     joblib.dump(model_pipeline, filepath)
 
 def load_model(filepath):
-    return joblib.load(filepath)
+    """
+    Load model and return. Also ensure model_type exists.
+    """
+    model = joblib.load(filepath)
+    if not hasattr(model, "model_type"):
+        model.model_type = "Unknown"
+    return model
 
 def tune_model(model, param_grid, X_train, y_train, scoring='neg_root_mean_squared_error', method='random', n_iter=20, cv=5):
     """
