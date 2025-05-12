@@ -6,7 +6,6 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from statsmodels.tsa.seasonal import seasonal_decompose
-from sklearn.metrics import ConfusionMatrixDisplay
 from constants import LABEL_MAP
 
 def plot_time_series(df, variable="T2M"):

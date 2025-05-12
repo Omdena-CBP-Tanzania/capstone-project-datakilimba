@@ -1,6 +1,10 @@
 pandas
-numpy 
-streamlit
+numpy
+streamlit==1.30.0
 matplotlib
 seaborn
-scikit-learn
+scikit-learn==1.3.2
+statsmodels
+joblib
+plotly
+rich

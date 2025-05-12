@@ -3,13 +3,15 @@
 
 A climate analytics and forecasting tool built as part of the **Omdena CBP Tanzania Capstone Project**. This application enables users to explore climate trends and generate monthly forecasts for key variables across Tanzanian regions using machine learning models.
 
+The first iteration of the prediction application has been deployed on [Streamlit](https://climate-forecasting-kilimba.streamlit.app/). Improvements are welcome and Pull Requests can be made on [GitHub here](https://github.com/datakilimba/climate-forecasting/tree/main)
+
 ## 📌 Project Objectives
 
 - Develop a user-friendly dashboard to explore historical climate trends in Tanzania.
 - Build and compare multiple regression models (e.g., Random Forest, Ridge, SVR) to predict monthly values of climate variables.
 - Enable real-time single-point prediction for any selected month and region.
 - Detect anomalies and visualize predicted values in historical context.
-- Apply learnings from the **Omdena ML/AI for Social Good** course on model lifecycle, collaboration, and storytelling.
+- Apply learnings from the **Omdena ML/AI for Social Good** course on model lifecycle, collaboration, and storytelling
 
 ---
 
